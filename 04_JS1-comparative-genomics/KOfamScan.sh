@@ -29,7 +29,7 @@ for GENOME in "${GENOME_DIR}"/*.fna; do
         -i "${GENOME}" \
         -a "${PROTEIN_DIR}/${ID}.faa" \
         -d "${PROTEIN_DIR}/${ID}.fna" \
-        -p single \
+        -p meta \
         -q
 
 done
