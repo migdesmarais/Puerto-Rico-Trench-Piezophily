@@ -1,11 +1,14 @@
 # JS1 16S rRNA gene clade abundance
 #
-# Calculates total JS1 relative abundance and abundance of the
-# three dominant 99%-identity JS1 sequence clusters.
+# Calculates total JS1 relative abundance and the abundance of
+# the three dominant 99%-identity JS1 sequence clusters.
+#
+# The three dominant clusters were manually designated
+# JS1-16S clades 1, 2 and 3 for the manuscript.
 #
 # Inputs:
-#   PRT_16S_zotus_tax_FINAL.txt = finalized ASV/zOTU count table
-#   vsearch_99/JS1_clusters_99.uc = VSEARCH clustering output
+#   PRT_16S_zotus_tax_FINAL.txt
+#   vsearch_99/JS1_clusters_99.uc
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -25,7 +28,7 @@ outdir <- "results"
 dir.create(outdir, showWarnings = FALSE)
 
 # ------------------------------------------------------------
-# Read finalized ASV table
+# Read finalized ASV/zOTU table
 # ------------------------------------------------------------
 
 asv <- read.delim(
@@ -35,7 +38,8 @@ asv <- read.delim(
 )
 
 # First column = ASV/zOTU identifier
-# Last column = taxonomy
+# Last column  = taxonomy
+
 id_col  <- names(asv)[1]
 tax_col <- names(asv)[ncol(asv)]
 
@@ -44,7 +48,8 @@ sample_cols <- setdiff(
   c(id_col, tax_col)
 )
 
-# Total reads in each sample BEFORE extracting JS1
+# Total reads in each sample before extracting JS1
+
 sample_totals <- colSums(
   asv[, sample_cols],
   na.rm = TRUE
@@ -80,7 +85,7 @@ uc <- read.delim(
   fill = TRUE
 )
 
-# VSEARCH .uc:
+# VSEARCH .uc format:
 # V1 = record type
 # V2 = cluster number
 # V9 = query sequence label
@@ -94,7 +99,7 @@ cluster_membership <- uc %>%
   distinct()
 
 # ------------------------------------------------------------
-# Associate JS1 zOTUs with 99% clusters
+# Associate JS1 zOTUs with 99%-identity clusters
 # ------------------------------------------------------------
 
 js1_clusters <- js1 %>%
@@ -105,44 +110,109 @@ js1_clusters <- js1 %>%
   )
 
 # ------------------------------------------------------------
-# Determine the three dominant clusters
+# Identify the three dominant JS1 clusters
 #
-# Dominance is defined by summed read abundance across the
-# complete PRT 16S dataset.
+# Dominance is determined from summed read abundance across
+# the complete PRT 16S dataset.
 # ------------------------------------------------------------
 
 cluster_totals <- js1_clusters %>%
   group_by(cluster) %>%
   summarise(
-    total_reads =
-      sum(
-        across(
-          all_of(sample_cols)
-        ),
-        na.rm = TRUE
+    total_reads = sum(
+      as.matrix(
+        pick(all_of(sample_cols))
       ),
+      na.rm = TRUE
+    ),
     .groups = "drop"
   ) %>%
-  arrange(desc(total_reads)) %>%
-  mutate(
-    dominance_rank = row_number()
-  )
+  arrange(desc(total_reads))
 
 dominant_clusters <- cluster_totals %>%
-  slice_head(n = 3) %>%
-  mutate(
-    js1_16S_clade =
-      paste0(
-        "JS1-16S clade ",
-        dominance_rank
-      )
-  )
+  slice_head(n = 3)
 
 write_csv(
-  dominant_clusters,
+  cluster_totals,
   file.path(
     outdir,
-    "JS1_16S_dominant_clusters.csv"
+    "JS1_16S_cluster_total_abundance.csv"
+  )
+)
+
+message(
+  "Three dominant 99%-identity clusters: ",
+  paste(dominant_clusters$cluster, collapse = ", ")
+)
+
+# ------------------------------------------------------------
+# Assign manuscript clade labels
+# ------------------------------------------------------------
+#
+# IMPORTANT:
+#
+# Clades 1, 2 and 3 are manuscript labels assigned to the
+# three dominant 99%-identity groups. They are NOT assigned
+# automatically according to abundance rank.
+#
+# After VSEARCH clustering, replace the values below with the
+# cluster IDs corresponding to the manuscript clades.
+#
+# Example:
+#
+# clade_mapping <- tibble(
+#   cluster = c(4, 0, 2),
+#   js1_16S_clade = c(
+#     "JS1-16S clade 1",
+#     "JS1-16S clade 2",
+#     "JS1-16S clade 3"
+#   )
+# )
+
+clade_mapping <- tibble(
+  cluster = c(
+    NA_integer_,
+    NA_integer_,
+    NA_integer_
+  ),
+  js1_16S_clade = c(
+    "JS1-16S clade 1",
+    "JS1-16S clade 2",
+    "JS1-16S clade 3"
+  )
+)
+
+# Stop rather than silently assigning incorrect clade labels
+
+if (any(is.na(clade_mapping$cluster))) {
+  stop(
+    paste0(
+      "Enter the VSEARCH cluster IDs corresponding to ",
+      "JS1-16S clades 1, 2 and 3 in clade_mapping."
+    )
+  )
+}
+
+# Check that the manually assigned clades are the three
+# dominant clusters
+
+if (!setequal(
+  clade_mapping$cluster,
+  dominant_clusters$cluster
+)) {
+  warning(
+    paste0(
+      "The manually assigned clades do not correspond exactly ",
+      "to the three most abundant JS1 clusters."
+    )
+  )
+}
+
+write_csv(
+  clade_mapping,
+  file.path(
+    outdir,
+    "JS1_16S_clade_mapping.csv"
   )
 )
 
@@ -152,11 +222,7 @@ write_csv(
 
 clade_counts <- js1_clusters %>%
   inner_join(
-    dominant_clusters %>%
-      select(
-        cluster,
-        js1_16S_clade
-      ),
+    clade_mapping,
     by = "cluster"
   ) %>%
   select(
@@ -182,7 +248,7 @@ clade_counts <- js1_clusters %>%
   )
 
 # ------------------------------------------------------------
-# Total JS1 abundance per sample
+# Calculate total JS1 abundance per sample
 # ------------------------------------------------------------
 
 total_js1 <- js1 %>%
@@ -212,8 +278,8 @@ total_js1 <- js1 %>%
   )
 
 # ------------------------------------------------------------
-# Convert clade counts to relative abundance of total
-# community reads
+# Calculate abundance of each JS1 clade relative to the
+# complete 16S community
 # ------------------------------------------------------------
 
 clade_abundance <- clade_counts %>%
@@ -235,6 +301,10 @@ clade_abundance <- clade_counts %>%
     values_fill = 0
   )
 
+# ------------------------------------------------------------
+# Final table
+# ------------------------------------------------------------
+
 final <- total_js1 %>%
   select(
     sample,
@@ -244,10 +314,6 @@ final <- total_js1 %>%
     clade_abundance,
     by = "sample"
   )
-
-# ------------------------------------------------------------
-# Save
-# ------------------------------------------------------------
 
 write_csv(
   final,
