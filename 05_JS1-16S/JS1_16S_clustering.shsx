@@ -2,9 +2,6 @@
 set -euo pipefail
 
 # JS1 16S rRNA gene sequence clustering
-# Desmarais et al.
-# "Piezophilic activity dominates the Puerto Rico Trench
-# deep subseafloor biosphere"
 #
 # JS1-affiliated sequence variants are clustered at 99%
 # nucleotide identity using VSEARCH.
